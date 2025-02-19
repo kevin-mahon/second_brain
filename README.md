@@ -27,8 +27,10 @@ the metadata securely, the key for this is generated on first use and stored in
 ## Installation
 1. Clone the repository
 2. Run `chmod +x setup.sh && ./setup.sh`
-3. Run `pip install -r requirements.txt`
-4. (Optional) Alias the script to a command in your shell i.e.
+3. Run `source bin/activate` to start the virtual environment
+    - To deactivate the virtual environment run `deactivate`
+4. Run `pip install -r requirements.txt`
+5. (Optional) Alias the script to a command in your shell i.e.
     `alias sb="<path to repo>/sb.sh"`
 
 ## Usage
