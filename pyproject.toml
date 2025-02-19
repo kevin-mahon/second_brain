@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools >= 61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+py-modules = []
+
+[project]
+name = "secondbrain"
+version = "0.1.0"
+authors = [
+    {name = "Kevin J. Mahon", email = "k.mahon.dev@gmail.com"}
+]
+description = "A simple command line tool for managing notes."
+
