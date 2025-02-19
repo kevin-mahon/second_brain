@@ -65,6 +65,7 @@ class Vault:
         return None
 
     def update(self, note):
+        # TODO: remove the note from the vault.json
         self.store[note.id] = note
 
     def save(self):

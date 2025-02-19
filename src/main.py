@@ -5,11 +5,10 @@ from config import SECOND_BRAIN_DIR
 import datetime
 
 #TODO:
-# 1. Add a search functionality
-# 2. Add link map functionality
+# 1. Double listing editted notes 
 
 def read_note(filename, id):
-    note = Note(filename, id)
+    note = Note(filename, None, id=id)
     with open(f"{SECOND_BRAIN_DIR}/{filename}.md", "r") as fd:
         content = fd.read()
         note.content = content
