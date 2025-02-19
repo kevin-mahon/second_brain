@@ -4,11 +4,9 @@ from note import Note, generate_id
 from config import SECOND_BRAIN_DIR
 import datetime
 
-#GAMECHANGER: LINks should just be FILE PATHS, gf in neovim GOES TO THE FILE
 #TODO:
 # 1. Add a search functionality
-#
-#
+# 2. Add link map functionality
 
 def generate_note(filename="note"):
     with open(f"{SECOND_BRAIN_DIR}/{filename}.md", "w") as fd:

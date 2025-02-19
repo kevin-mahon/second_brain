@@ -14,7 +14,7 @@ class Note:
         self.id = uuid.uuid4().int if id is None else id 
         self.title = title 
         self.content = content
-        # TODO: tag itself??
+        # TODO: generate the tag itself from content??
         self.tags = []
         self.links = []
 

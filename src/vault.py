@@ -10,8 +10,13 @@ class Vault:
         self.store = {}
         self.hubs = {} #dict of tags with notes of highest linkage
         self.tags = [] #list of topics / tags
-        with open(KEY_FILE, "rb") as f:
-            self.key = f.read()
+        if os.path.exists(KEY_FILE):
+            with open(KEY_FILE, "rb") as f:
+                self.key = f.read()
+        else:
+            self.key = Fernet.generate_key()
+            with open(KEY_FILE, "wb") as f:
+                f.write(self.key)
         self.cipher = Fernet(self.key)
         self.root_of_all_knowledge = Note("Root of All Knowledge", "This is the root of all knowledge", id=0) 
         self.load()
