@@ -16,7 +16,7 @@ the metadata securely, the key for this is generated on first use and stored in
 - [X] Markdown support
 - [ ] Graph view
 - [X] Tagging
-- [ ] Search
+- [X] Search
 - [X] Backlinks
 - [ ] Drawing support
 - [ ] Mobile app ???
@@ -34,7 +34,8 @@ the metadata securely, the key for this is generated on first use and stored in
 ## Usage
 - `sb <note name>` - Add a new note
 - `sb -l` - List all notes
-- `sb -s <tag>` - Search for notes with a tag (Not implemented)
-- `sb -b <note name>` - List all notes that link to this note (Not implemented)
+- `sb -s <tag>` - Search for notes with a tag 
+- `sb -b <note name>` - List all notes that link to this note 
+- `sb -e <note name>` - Edit a note
 
 
