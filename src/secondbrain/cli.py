@@ -6,6 +6,7 @@ import argparse
 import os
 import subprocess
 import sys
+from collections import Counter
 from dataclasses import replace
 from pathlib import Path
 
@@ -78,15 +79,22 @@ class App:
         if self.syncer:
             report_sync(self.syncer.sync(), verbose)
 
-    def pick(self, query: list[str] | str) -> Note:
+    def pick(self, query: list[str] | str, purpose: str = "note") -> Note:
+        """Best-effort match; if several notes match (or no query was given), let the user choose."""
+        from . import picker
+
         query = " ".join(query) if isinstance(query, list) else query
-        matches = self.vault.find(query)
+        matches = self.vault.find(query) if query.strip() else list(self.vault.notes())
         if not matches:
-            raise SBError(f"no note matches '{query}'")
-        if len(matches) > 1:
-            listing = "\n".join("  " + fmt_note(n) for n in matches)
-            raise SBError(f"'{query}' matches {len(matches)} notes, so be more specific:\n{listing}")
-        return matches[0]
+            raise SBError(f"no note matches '{query}'" if query.strip() else "the vault has no notes yet")
+        if len(matches) == 1 and query.strip():
+            return matches[0]
+        if picker.interactive():
+            return picker.choose(matches, purpose, fmt_note)
+        if not query.strip():
+            raise SBError("which note? Give part of its title")
+        listing = "\n".join("  " + fmt_note(n) for n in matches)
+        raise SBError(f"'{query}' matches {len(matches)} notes, so be more specific:\n{listing}")
 
     def edit(self, path: Path, at_end: bool = False) -> None:
         cmd = list(self.cfg.editor)
@@ -136,20 +144,20 @@ def cmd_new(app: App, args) -> None:
 
 
 def cmd_edit(app: App, args) -> None:
-    note = app.pick(args.query)
+    note = app.pick(args.query, "edit")
     assert note.path
     app.edit(note.path)
     app.sync()
 
 
 def cmd_show(app: App, args) -> None:
-    note = app.pick(args.query)
+    note = app.pick(args.query, "show")
     assert note.path
     sys.stdout.write(note.path.read_text(encoding="utf-8"))
 
 
 def cmd_path(app: App, args) -> None:
-    print(app.pick(args.query).path)
+    print(app.pick(args.query, "path").path)
 
 
 def cmd_ls(app: App, args) -> None:
@@ -176,7 +184,7 @@ def cmd_tags(app: App, args) -> None:
 
 
 def cmd_links(app: App, args) -> None:
-    note = app.pick(args.query)
+    note = app.pick(args.query, "links")
     for target in note.links:
         linked = app.vault.resolve_link(target)
         print(f"→ {fmt_note(linked)}" if linked else red(f"→ [[{target}]] (no such note)"))
@@ -185,7 +193,7 @@ def cmd_links(app: App, args) -> None:
 
 
 def cmd_backlinks(app: App, args) -> None:
-    note = app.pick(args.query)
+    note = app.pick(args.query, "backlinks")
     backlinks = app.vault.backlinks(note)
     for other in backlinks:
         print(f"← {fmt_note(other)}")
@@ -194,7 +202,7 @@ def cmd_backlinks(app: App, args) -> None:
 
 
 def cmd_rm(app: App, args) -> None:
-    note = app.pick(args.query)
+    note = app.pick(args.query, "rm")
     assert note.path
     backlinks = app.vault.backlinks(note)
     if not args.yes:
@@ -221,7 +229,7 @@ def cmd_graph(app: App, args) -> None:
 
     footer, center = [], None
     if args.query:
-        note = app.pick(args.query)
+        note = app.pick(args.query, "graph")
         index = next(i for i, n in enumerate(graph.notes) if n is note)
         keep = graph.neighborhood(index, args.depth)
         center = keep.index(index)
@@ -313,6 +321,75 @@ def cmd_i_backlinks(app: App, args) -> None:
                     break
 
 
+# -- shell completion ------------------------------------------------------------
+
+BASH_COMPLETION = """\
+# bash completion for sb. Installed by setup.sh; print it again with `sb completion bash`.
+# Candidates come from sb itself, so this file never goes out of date.
+_sb() {{
+    local IFS=$'\\n'
+    COMPREPLY=($(SB_PICKER=none {sb} _shell_complete "$COMP_CWORD" "${{COMP_WORDS[@]}}" 2>/dev/null))
+}}
+complete -o nosort -F _sb sb
+"""
+
+
+def cmd_completion(app: App, args) -> None:
+    exe = os.path.abspath(sys.argv[0])
+    sb = exe if Path(exe).name == "sb" else "sb"
+    home = str(Path.home())
+    sb = '"$HOME' + sb[len(home):] + '"' if sb.startswith(home + "/") else sb
+    print(BASH_COMPLETION.format(sb=sb), end="")
+
+
+NOTE_COMMANDS = {"cmd_edit", "cmd_show", "cmd_path", "cmd_links", "cmd_backlinks", "cmd_rm", "cmd_graph"}
+
+
+def shell_candidates(cfg: Config, words: list[str], cword: int) -> list[str]:
+    """Completions for words[cword], where words is the whole command line starting with `sb`."""
+    cur = words[cword] if cword < len(words) else ""
+    parser = build_parser()
+    subparsers = next(a for a in parser._actions if isinstance(a, argparse._SubParsersAction))
+
+    def options(p: argparse.ArgumentParser) -> list[str]:
+        return [o for a in p._actions for o in a.option_strings if o.startswith(cur)]
+
+    sub = next((w for w in words[1:cword] if not w.startswith("-")), None)
+    if sub is None:
+        if cur.startswith("-"):
+            return options(parser)
+        return [a.dest for a in subparsers._choices_actions if a.dest.startswith(cur)]
+
+    sp = subparsers.choices.get(sub)
+    if sp is None:
+        return []
+    prev = words[cword - 1] if cword > 0 else ""
+    if prev in ("-t", "--tag"):
+        return [t for t in Vault(cfg).tags() if t.startswith(cur.lstrip("#"))]
+    if prev == "--by":
+        return [v for v in ("cluster", "tag") if v.startswith(cur)]
+    if cur.startswith("-"):
+        return options(sp)
+    if sp.get_default("func").__name__ in NOTE_COMMANDS:
+        return note_candidates(Vault(cfg), cur)
+    return []
+
+
+def note_candidates(vault: Vault, cur: str) -> list[str]:
+    """Slugs (shell-friendly, and they resolve exactly). Prefix matches first, as shells expect;
+    failing that, a single best-effort match. Several fuzzy matches are left to the picker."""
+    notes = vault.notes()
+    slug_count = Counter(n.slug for n in notes)
+    name = {n.id: n.slug if slug_count[n.slug] == 1 else n.path.stem for n in notes}
+    c = cur.casefold()
+    hits = [name[n.id] for n in notes if name[n.id].startswith(c)]
+    hits += [n.id for n in notes if c and n.id.startswith(c)]
+    if hits or not c:
+        return hits
+    matches = vault.find(cur)
+    return [name[matches[0].id]] if len(matches) == 1 else []
+
+
 def cmd_sync(app: App, args) -> None:
     pass  # the sync before every command already did the work; main reports it verbosely
 
@@ -346,10 +423,12 @@ def build_parser() -> argparse.ArgumentParser:
         ("links", cmd_links, "list what a note links to", []),
         ("backlinks", cmd_backlinks, "list notes that link to a note", ["bl"]),
     ):
-        add(name, func, help, aliases).add_argument("query", nargs="+", help="id, title, or part of a title")
+        add(name, func, help, aliases).add_argument(
+            "query", nargs="*", help="id, title, part of a title, or a tag; leave empty to pick from all"
+        )
 
     p = add("rm", cmd_rm, "delete a note")
-    p.add_argument("query", nargs="+")
+    p.add_argument("query", nargs="*")
     p.add_argument("-y", "--yes", action="store_true", help="don't ask for confirmation")
 
     p = add("ls", cmd_ls, "list notes", ["l"])
@@ -370,6 +449,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--no-color", action="store_true")
 
     add("tags", cmd_tags, "list tags with note counts")
+    p = add("completion", cmd_completion, "print the bash completion script (setup.sh installs it)")
+    p.add_argument("shell", choices=["bash"], nargs="?", default="bash")
+    p.set_defaults(sync=False)
     add("nvim-setup", cmd_nvim_setup, "print an optional init.lua snippet for using plain nvim")
 
     # Internal commands for sb.lua: hidden from --help, and they skip sync.
@@ -389,6 +471,16 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    argv = sys.argv[1:] if argv is None else argv
+    if argv[:1] == ["_shell_complete"]:
+        # Bypass argparse: the words being completed may look like options.
+        try:
+            for candidate in shell_candidates(Config.from_env(), argv[2:], int(argv[1])):
+                print(candidate)
+        except Exception:
+            pass  # never spew tracebacks into someone's prompt
+        return 0
+
     parser = build_parser()
     args = parser.parse_args(argv)
     if not getattr(args, "func", None):

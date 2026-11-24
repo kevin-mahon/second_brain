@@ -2,12 +2,26 @@
 
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 from typing import Iterable
 
 from .config import Config
 from .note import ID_PREFIX_RE, Note, new_id, now_created, slugify
+
+
+def _subsequence_score(needle: str, haystack: str) -> int:
+    """>0 if needle's letters appear in order in haystack; tighter matches score higher."""
+    if not needle:
+        return 0
+    start = pos = -1
+    for ch in needle:
+        pos = haystack.find(ch, pos + 1)
+        if pos < 0:
+            return 0
+        start = pos if start < 0 else start
+    return max(1, 30 - (pos - start - len(needle)))
 
 
 class Vault:
@@ -75,8 +89,36 @@ class Vault:
         exact = self.resolve_link(query)
         if exact:
             return [exact]
-        q = query.casefold()
-        return [n for n in self.notes() if q in n.title.casefold() or q in n.path.name.casefold()]
+        phrase = " ".join(query.casefold().split())
+        tokens = phrase.split()
+        if not tokens:
+            return list(self.notes())
+        scored = [(self._score(n, phrase, tokens), n) for n in self.notes()]
+        hits = [(s, n) for s, n in scored if s > 0]
+        if not hits:
+            # Last resort: the letters appear in order in the title ("zkn" -> "ZettelKasten in a Nutshell").
+            squashed = phrase.replace(" ", "")
+            hits = [(s, n) for n in self.notes() if (s := _subsequence_score(squashed, n.title.casefold())) > 0]
+        hits.sort(key=lambda sn: -sn[0])  # stable: ties stay in id order
+        return [n for _, n in hits]
+
+    @staticmethod
+    def _score(note: Note, phrase: str, tokens: list[str]) -> int:
+        """Every token must match the title, filename or a tag; better matches score higher."""
+        title = note.title.casefold()
+        words = re.findall(r"\w+", title)
+        tags = [t.casefold() for t in note.tags]
+        score = 100 if title.startswith(phrase) else 40 if phrase in title else 0
+        for token in tokens:
+            if any(w.startswith(token) for w in words):
+                score += 30
+            elif token in title or token in note.path.stem.casefold():
+                score += 15
+            elif any(t.startswith(token) for t in tags):
+                score += 10
+            else:
+                return 0
+        return score
 
     def backlinks(self, note: Note) -> list[Note]:
         return [

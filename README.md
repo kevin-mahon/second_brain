@@ -62,7 +62,7 @@ Without cloning: `uv tool install git+https://github.com/kevin-mahon/second_brai
 
 ```
 sb new <title> [-t tag]   create a note and open it in $SB_EDITOR / $EDITOR / nvim
-sb edit <query>           edit a note (id, title, or any unique part of the title)
+sb edit [query]           edit a note; several matches (or none given) open a picker
 sb show <query>           print a note
 sb ls [-t tag]            list notes
 sb search <text> [-t tag] search titles, tags and text
@@ -89,6 +89,15 @@ installed on:
 
 If you open notes with plain `nvim`, `sb nvim-setup` prints an optional
 init.lua snippet.
+
+### Finding the note you mean
+
+Every command that takes a note (`edit`, `show`, `rm`, `links`,
+`backlinks`, `path`, `graph`) does best-effort matching on titles, tags
+and ids. If more than one note matches, or you give no query, it opens a
+picker: fzf with a preview if installed (`SB_PICKER=builtin` for a
+numbered menu instead). Tab completion is installed by `setup.sh` into
+`~/.local/share/bash-completion/completions/sb`.
 
 The vault seeds itself with notes explaining all of this. Start with
 `sb show welcome`.

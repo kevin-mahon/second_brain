@@ -78,6 +78,15 @@ if [[ "$(command -v sb)" != "$SB" ]]; then
     warn "Put $BIN_DIR earlier in PATH, or add:  alias sb='$SB'"
 fi
 
+# Tab completion. bash-completion loads files from this folder on demand, so no rc edits.
+COMPLETION_DIR="${BASH_COMPLETION_USER_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/bash-completion}/completions"
+mkdir -p "$COMPLETION_DIR"
+"$SB" completion bash > "$COMPLETION_DIR/sb"
+say "Installed tab completion to $COMPLETION_DIR/sb (new shells pick it up)"
+if [[ ! -f /usr/share/bash-completion/bash_completion && ! -f /etc/bash_completion ]]; then
+    warn "bash-completion isn't installed, so tab completion won't load (sudo apt install bash-completion)"
+fi
+
 # Remove the old alias-style wrapper from earlier versions if it's lying around.
 for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
     if [[ -f "$rc" ]] && grep -q 'alias sb=.*sb\.sh' "$rc"; then

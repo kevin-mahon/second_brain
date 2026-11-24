@@ -54,10 +54,20 @@ Back to [[Welcome to sb]].
 
 ```
 sb new Spaced repetition -t learning -t memory
-sb edit spaced            # any unique part of the title works
+sb edit spaced            # part of a title, a tag, or an id
+sb e zett                 # several matches? pick one from a list
+sb e                      # no query: pick from every note
 sb show spaced            # print it without opening the editor
 sb rm spaced
 ```
+
+Matching is forgiving. Each word you type has to appear in the title, the
+filename or a tag, and the best matches come first. As a last resort,
+letters in order also match (`zkn` finds "Zettelkasten in a nutshell").
+When more than one note matches, sb opens a picker: fzf with a preview if
+it's installed, otherwise a numbered list you can narrow by typing.
+
+Tab completion works too: `sb e spa<Tab>` becomes `sb e spaced-repetition`.
 
 Each note is a markdown file in `~/.sb/notes/`, named `<id>-<slug>.md`.
 It starts with a frontmatter block:
