@@ -27,10 +27,10 @@ yours is kept as a separate `... (conflict from <host>)` note.
 - [X] Markdown support, YAML frontmatter
 - [X] Tagging
 - [X] Search (titles, tags, full text)
-- [X] `[[wikilinks]]` and backlinks
+- [X] `[[wikilinks]]`, markdown links, and backlinks
 - [X] Sync (encrypted git)
 - [X] Graph view (force-directed, braille + color in the terminal)
-- [ ] Neovim integration (follow links, completion)
+- [X] Neovim integration (`gf` on links, backlinks, `[[` completion), no nvim config needed
 - [ ] Drawing support
 - [ ] Export / Import
 
@@ -76,6 +76,19 @@ sb graph --stats          hubs, orphans, broken links
 sb sync                   sync (every command already does this)
 sb -n <command>           skip the network this time (or SB_OFFLINE=1)
 ```
+
+### Neovim
+
+`sb edit` and `sb new` load `src/secondbrain/nvim/sb.lua` into nvim for that
+session (after your own config), so it works on every machine sb is
+installed on:
+
+- `gf` / `<CR>` follow `[[link]]` or `[text](note.md)` (offers to create missing notes)
+- `gb` backlinks to the quickfix list; `[[` in insert mode completes titles
+- `:SbLink`, `:SbNew`, `:SbBacklinks`, `:SbGraph`
+
+If you open notes with plain `nvim`, `sb nvim-setup` prints an optional
+init.lua snippet.
 
 The vault seeds itself with notes explaining all of this. Start with
 `sb show welcome`.

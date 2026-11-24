@@ -21,6 +21,7 @@ Start here, then follow the links:
 - [[Linking notes]]: wikilinks and backlinks
 - [[Finding notes]]: listing, tags, and search
 - [[The graph view]]: see the whole network in your terminal
+- [[Using sb in Neovim]]: follow links with `gf`, backlinks, completion
 - [[Sync and encryption]]: how your notes get to your other machines
 - [[Setting up another machine]]
 
@@ -93,6 +94,9 @@ Link to another note by writing its title in double brackets, for example
 
 - `[[Finding notes|how to search]]`: link with different display text
 - `[[20261124123000]]`: link by id, which survives renames
+- `[text](20261124123000-finding-notes.md)`: a plain markdown link. It
+  works with stock `gf` in any editor and on GitHub, and still resolves
+  by id if the file is renamed
 
 A link matches a note by id, then title (case-insensitive), then filename,
 then slug. Links inside `code` are ignored.
@@ -153,6 +157,34 @@ notes push each other apart. Separate groups of notes are drawn apart.
 
 `--stats` is worth checking now and then. Orphans and broken links are
 where a Zettelkasten quietly decays. See [[Linking notes]].
+""",
+    ),
+    (
+        "Using sb in Neovim",
+        ["sb", "help", "nvim"],
+        """
+# Using sb in Neovim
+
+When `sb edit` or `sb new` opens nvim, it loads sb's link handling for
+that session. Your nvim config isn't touched, so every machine with sb
+installed gets it for free.
+
+| key / command        | what it does                                           |
+|----------------------|--------------------------------------------------------|
+| `gf` or `<CR>`       | follow the link under the cursor (offers to create it) |
+| `<C-o>`              | jump back (plain nvim)                                 |
+| `gb`                 | backlinks to this note, in the quickfix list           |
+| `[[` (insert mode)   | start a link and complete note titles                  |
+| `:SbLink`            | pick a note and insert a link to it                    |
+| `:SbNew [title]`     | create a note and open it                              |
+| `:SbGraph [depth]`   | graph around this note in a terminal tab (`q` closes)  |
+
+Jump around and edit as many notes as you like. When nvim exits, sb
+syncs everything that changed. Both `[[wikilinks]]` and markdown links
+work; see [[Linking notes]].
+
+Opening notes with plain `nvim` instead? Run `sb nvim-setup` and paste
+the snippet it prints into your init.lua. It's optional.
 """,
     ),
     (

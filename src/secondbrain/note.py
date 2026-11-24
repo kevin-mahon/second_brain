@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Iterable
+from urllib.parse import unquote
 
 import yaml
 
@@ -20,6 +21,8 @@ FRONTMATTER_RE = re.compile(r"\A---[ \t]*\r?\n(.*?)\r?\n---[ \t]*(?:\r?\n|\Z)", 
 CODE_RE = re.compile(r"```.*?(?:```|\Z)|~~~.*?(?:~~~|\Z)|`[^`\n]*`", re.S)
 # [[target]], [[target|alias]], [[target#heading]]
 LINK_RE = re.compile(r"\[\[([^\[\]|#\n]+)(?:[#|][^\[\]\n]*)?\]\]")
+# [text](some-note.md) and [text](./some-note.md#heading): local markdown links only.
+MD_LINK_RE = re.compile(r"(?<!!)\[[^\]\n]*\]\((?!\w+://)([^)\s]+?\.md)(?:#[^)\s]*)?\)")
 HEADING_RE = re.compile(r"^#\s+(.+?)\s*$", re.M)
 ID_PREFIX_RE = re.compile(r"^(\d{14})")
 
@@ -41,6 +44,19 @@ def new_id(taken: Iterable[str] = ()) -> str:
 
 def now_created() -> str:
     return datetime.now().strftime(CREATED_FORMAT)
+
+
+def md_target(raw: str) -> str:
+    """`./dir/20261124-foo%20bar.md` -> `20261124-foo bar` (all notes live in one folder)."""
+    name = unquote(raw).replace("\\", "/").rsplit("/", 1)[-1]
+    return name[:-3] if name.endswith(".md") else name
+
+
+def find_links(text: str) -> list[tuple[str, int]]:
+    """(target, offset) for every [[wikilink]] and local markdown link in text, in order."""
+    found = [(m.group(1).strip(), m.start()) for m in LINK_RE.finditer(text)]
+    found += [(md_target(m.group(1)), m.start()) for m in MD_LINK_RE.finditer(text)]
+    return sorted(((t, pos) for t, pos in found if t), key=lambda tp: tp[1])
 
 
 def _yaml_line(key: str, value) -> str:
@@ -124,8 +140,7 @@ class Note:
     def links(self) -> list[str]:
         """Link targets in the body, in order, without duplicates."""
         text = CODE_RE.sub("", self.body)
-        found = dict.fromkeys(m.group(1).strip() for m in LINK_RE.finditer(text))
-        return [t for t in found if t]
+        return list(dict.fromkeys(t for t, _ in find_links(text)))
 
     @property
     def slug(self) -> str:

@@ -57,3 +57,19 @@ def test_ensure_ids_adopts_hand_made_files(machine):
     reloaded = Note.load(fixed.path)
     assert reloaded.id == fixed.id and reloaded.title == "Loose idea"
     assert reloaded.body == "# Loose idea\n\nhello\n"
+
+
+def test_markdown_links_count_as_links():
+    body = "a [x](20261124120000-foo.md) b [y](./dir/bar%20baz.md#h) ![img](pic.md) [web](https://e.com/a.md)\n"
+    assert Note.parse(body).links == ["20261124120000-foo", "bar baz"]
+
+
+def test_links_keep_document_order_across_syntaxes():
+    assert Note.parse("[m](b.md) then [[A]]\n").links == ["b", "A"]
+
+
+def test_md_link_resolves_after_rename(machine):
+    vault = Vault(machine("a"))
+    note = vault.create("New title")
+    assert vault.resolve_link(f"{note.id}-old-title.md") is vault.resolve_link(note.id)
+    assert vault.resolve_link(note.path.name).id == note.id

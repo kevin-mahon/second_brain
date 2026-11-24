@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Iterable
 
 from .config import Config
-from .note import Note, new_id, now_created, slugify
+from .note import ID_PREFIX_RE, Note, new_id, now_created, slugify
 
 
 class Vault:
@@ -58,12 +58,14 @@ class Vault:
         """What a [[target]] points at, or None if it is a broken link."""
         self.notes()
         target = target.strip()
-        for key in (
-            "id:" + target,
-            "title:" + target.casefold(),
-            "stem:" + target,
-            "slug:" + slugify(target),
-        ):
+        if target.endswith(".md"):
+            target = target[:-3]
+        keys = ["id:" + target, "title:" + target.casefold(), "stem:" + target, "slug:" + slugify(target)]
+        prefix = ID_PREFIX_RE.match(target)
+        if prefix:
+            # `20261124123000-old-title` still finds the note after a rename.
+            keys.append("id:" + prefix.group(1))
+        for key in keys:
             if key in self._lookup:
                 return self._lookup[key]
         return None

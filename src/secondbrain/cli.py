@@ -11,7 +11,7 @@ from pathlib import Path
 
 from . import __version__
 from .config import Config, SBError
-from .note import Note
+from .note import Note, find_links
 from .sync import SyncReport, Syncer, init_vault
 from .vault import Vault
 
@@ -65,14 +65,18 @@ def report_sync(report: SyncReport, verbose: bool = False) -> None:
 # -- helpers ----------------------------------------------------------------
 
 
+NVIM_LUA = Path(__file__).parent / "nvim" / "sb.lua"
+
+
 class App:
-    def __init__(self, cfg: Config):
+    def __init__(self, cfg: Config, sync: bool = True):
         self.cfg = cfg
         self.vault = Vault(cfg)
-        self.syncer = Syncer(cfg, self.vault)
+        self.syncer = Syncer(cfg, self.vault) if sync else None
 
     def sync(self, verbose: bool = False) -> None:
-        report_sync(self.syncer.sync(), verbose)
+        if self.syncer:
+            report_sync(self.syncer.sync(), verbose)
 
     def pick(self, query: list[str] | str) -> Note:
         query = " ".join(query) if isinstance(query, list) else query
@@ -86,12 +90,22 @@ class App:
 
     def edit(self, path: Path, at_end: bool = False) -> None:
         cmd = list(self.cfg.editor)
-        if at_end and Path(cmd[0]).name in ("nvim", "vim", "vi"):
+        name = Path(cmd[0]).name
+        if at_end and name in ("nvim", "vim", "vi"):
             cmd.append("+")
+        env = dict(os.environ)
+        if name == "nvim":
+            # Load sb's link handling after the user's own config. Nothing to install per machine.
+            cmd += ["-c", f"lua dofile({lua_string(str(NVIM_LUA))})"]
+            env.update(SB_PYTHON=sys.executable, SB_NOTES_DIR=str(self.cfg.notes_dir))
         try:
-            subprocess.run([*cmd, str(path)])
+            subprocess.run([*cmd, str(path)], env=env)
         except FileNotFoundError:
             raise SBError(f"editor not found: {cmd[0]} (set $SB_EDITOR or $EDITOR)") from None
+
+
+def lua_string(text: str) -> str:
+    return '"' + text.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
 # -- commands ---------------------------------------------------------------
@@ -229,6 +243,76 @@ def cmd_graph(app: App, args) -> None:
                  labels=not args.no_labels, color=bool(color), footer=footer))
 
 
+NVIM_SETUP = """\
+-- sb: follow [[links]] even when you open notes with plain `nvim`.
+-- (`sb edit` and `sb new` already do this; you only need it for direct use.)
+vim.api.nvim_create_autocmd({{ "BufReadPre", "BufNewFile" }}, {{
+  pattern = vim.fn.expand("{notes}") .. "/*.md",
+  once = true,
+  callback = function()
+    local out = vim.fn.systemlist({{ vim.fn.expand("{sb}"), "_nvim" }})
+    if vim.v.shell_error == 0 then
+      vim.g.sb_python, vim.g.sb_notes_dir = out[2], out[3]
+      dofile(out[1])
+    end
+  end,
+}})"""
+
+
+def cmd_nvim_setup(app: App, args) -> None:
+    import shutil
+
+    sb = shutil.which("sb") or "sb"
+    if Path(sb).resolve() == Path("/usr/bin/sb").resolve():
+        sb = "sb"
+    sb = sb.replace(str(Path.home()), "~", 1)
+    notes = str(app.cfg.notes_dir).replace(str(Path.home()), "~", 1)
+    print(NVIM_SETUP.format(notes=notes, sb=sb))
+    info("optional: paste this into your nvim config (e.g. ~/.config/nvim/init.lua)")
+
+
+# -- internal commands used by sb.lua (no sync, machine-readable output) ------
+
+
+def cmd_i_nvim(app: App, args) -> None:
+    print(NVIM_LUA)
+    print(sys.executable)
+    print(app.cfg.notes_dir)
+
+
+def cmd_i_resolve(app: App, args) -> None:
+    note = app.vault.resolve_link(args.target)
+    if note is None:
+        raise SystemExit(3)  # "not found", distinct from a crash
+    print(note.path)
+
+
+def cmd_i_new(app: App, args) -> None:
+    note = app.vault.create(args.title.strip())
+    print(note.path)
+
+
+def cmd_i_complete(app: App, args) -> None:
+    for note in app.vault.notes():
+        tags = " ".join("#" + t for t in note.tags)
+        print(f"{note.title.replace(chr(9), ' ')}\t{tags}\t{note.path}")
+
+
+def cmd_i_backlinks(app: App, args) -> None:
+    """quickfix lines (path:line:col:text) for every link pointing at the note at PATH."""
+    target = Path(args.path).resolve()
+    note = next((n for n in app.vault.notes() if n.path.resolve() == target), None)
+    if note is None:
+        raise SystemExit(3)  # "not found", distinct from a crash
+    for other in app.vault.backlinks(note):
+        lines = other.path.read_text(encoding="utf-8").splitlines()
+        for lnum, line in enumerate(lines, 1):
+            for link, col in find_links(line):
+                if app.vault.resolve_link(link) is note:
+                    print(f"{other.path}:{lnum}:{col + 1}:{other.title}: {line.strip()}")
+                    break
+
+
 def cmd_sync(app: App, args) -> None:
     pass  # the sync before every command already did the work; main reports it verbosely
 
@@ -286,6 +370,20 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--no-color", action="store_true")
 
     add("tags", cmd_tags, "list tags with note counts")
+    add("nvim-setup", cmd_nvim_setup, "print an optional init.lua snippet for using plain nvim")
+
+    # Internal commands for sb.lua: hidden from --help, and they skip sync.
+    def internal(name, func, *arguments):
+        p = sub.add_parser(name)
+        p.set_defaults(func=func, sync=False)
+        for arg in arguments:
+            p.add_argument(arg)
+
+    internal("_nvim", cmd_i_nvim)
+    internal("_resolve", cmd_i_resolve, "target")
+    internal("_new", cmd_i_new, "title")
+    internal("_complete", cmd_i_complete)
+    internal("_backlinks", cmd_i_backlinks, "path")
     add("sync", cmd_sync, "sync now (every command already syncs first)")
     return parser
 
@@ -305,7 +403,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.func is cmd_init:
             cmd_init(cfg, args)
             return 0
-        app = App(cfg)
+        app = App(cfg, sync=getattr(args, "sync", True))
         app.sync(verbose=args.func is cmd_sync)
         args.func(app, args)
         return 0
