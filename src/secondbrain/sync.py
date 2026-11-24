@@ -224,11 +224,11 @@ class Syncer:
         self.apply_remote(report)
         if report.conflicts:
             self.commit_local(report)  # pick up the conflict copies
-        if self.git.ahead_of_remote():
+        if self.git.has_remote() and self.git.ahead_of_remote():
             if report.network == "ok" and self.git.push():
                 report.pushed = True
             else:
-                report.unpushed = report.network != "no-remote"
+                report.unpushed = True
         return report
 
 

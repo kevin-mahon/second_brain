@@ -20,6 +20,7 @@ Start here, then follow the links:
 - [[Creating and editing notes]]: `sb new`, `sb edit`, what a note looks like
 - [[Linking notes]]: wikilinks and backlinks
 - [[Finding notes]]: listing, tags, and search
+- [[The graph view]]: see the whole network in your terminal
 - [[Sync and encryption]]: how your notes get to your other machines
 - [[Setting up another machine]]
 
@@ -126,6 +127,32 @@ There is no database. sb reads the markdown files every time it runs, so
 what you see is always what's on disk.
 
 Back to [[Welcome to sb]].
+""",
+    ),
+    (
+        "The graph view",
+        ["sb", "help", "graph"],
+        """
+# The graph view
+
+```
+sb graph                  # the whole network (orphans hidden)
+sb graph -a               # include orphans
+sb graph spaced -d 1      # one note and its direct neighbours
+sb graph --by tag         # color by tag instead of cluster
+sb graph --stats          # hubs, orphans and broken links
+```
+
+Notes are placed by a force simulation: links pull notes together, all
+notes push each other apart. Separate groups of notes are drawn apart.
+
+- `◉` hub, `●` well linked, `•` linked, `·` orphan, `◎` the centre note
+- Colors are clusters, notes that link mostly among themselves. The
+  legend names each cluster after its best-connected note.
+- The layout is stable: the same notes give the same picture.
+
+`--stats` is worth checking now and then. Orphans and broken links are
+where a Zettelkasten quietly decays. See [[Linking notes]].
 """,
     ),
     (

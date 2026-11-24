@@ -195,6 +195,40 @@ def cmd_rm(app: App, args) -> None:
     app.sync()
 
 
+def cmd_graph(app: App, args) -> None:
+    import shutil
+
+    from .graph import Graph, render, stats
+
+    graph = Graph.from_vault(app.vault)
+    if args.stats:
+        print(stats(graph))
+        return
+
+    footer, center = [], None
+    if args.query:
+        note = app.pick(args.query)
+        index = next(i for i, n in enumerate(graph.notes) if n is note)
+        keep = graph.neighborhood(index, args.depth)
+        center = keep.index(index)
+        graph = graph.subgraph(keep)
+        footer.append(f"depth {args.depth} around '{note.title}'")
+    elif not args.all:
+        orphans = graph.orphans()
+        if orphans and len(orphans) < len(graph.notes):
+            graph = graph.subgraph([i for i in range(len(graph.notes)) if i not in set(orphans)])
+            footer.append(f"{len(orphans)} orphans hidden (-a to show)")
+
+    if args.size:
+        width, height = (int(v) for v in args.size.lower().split("x"))
+    else:
+        term = shutil.get_terminal_size((100, 30))
+        width, height = term.columns, term.lines - 1
+    color = sys.stdout.isatty() and not os.environ.get("NO_COLOR") and not args.no_color
+    print(render(graph, width, height, center=center, by=args.by,
+                 labels=not args.no_labels, color=bool(color), footer=footer))
+
+
 def cmd_sync(app: App, args) -> None:
     pass  # the sync before every command already did the work; main reports it verbosely
 
@@ -240,6 +274,16 @@ def build_parser() -> argparse.ArgumentParser:
     p = add("search", cmd_search, "search titles, tags and text", ["s"])
     p.add_argument("query", nargs="*")
     p.add_argument("-t", "--tag", action="append", help="only notes with this tag (repeatable)")
+
+    p = add("graph", cmd_graph, "draw the knowledge graph in the terminal", ["g"])
+    p.add_argument("query", nargs="*", help="center on this note and show its neighbourhood")
+    p.add_argument("-d", "--depth", type=int, default=2, help="neighbourhood depth (default 2)")
+    p.add_argument("--by", choices=["cluster", "tag"], default="cluster", help="what the colors mean")
+    p.add_argument("-a", "--all", action="store_true", help="include orphans (notes with no links)")
+    p.add_argument("--stats", action="store_true", help="hubs, orphans and broken links instead of a picture")
+    p.add_argument("--size", metavar="WxH", help="canvas size (default: the terminal)")
+    p.add_argument("--no-labels", action="store_true")
+    p.add_argument("--no-color", action="store_true")
 
     add("tags", cmd_tags, "list tags with note counts")
     add("sync", cmd_sync, "sync now (every command already syncs first)")

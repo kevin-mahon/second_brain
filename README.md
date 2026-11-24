@@ -29,7 +29,7 @@ yours is kept as a separate `... (conflict from <host>)` note.
 - [X] Search (titles, tags, full text)
 - [X] `[[wikilinks]]` and backlinks
 - [X] Sync (encrypted git)
-- [ ] Graph view (force-directed, rendered in the terminal)
+- [X] Graph view (force-directed, braille + color in the terminal)
 - [ ] Neovim integration (follow links, completion)
 - [ ] Drawing support
 - [ ] Export / Import
@@ -71,6 +71,8 @@ sb links <query>          outgoing links (shows broken ones)
 sb backlinks <query>      notes linking here
 sb rm <query>             delete a note
 sb path <query>           print a note's file path
+sb graph [query] [-d N]   draw the network (or one note's neighbourhood)
+sb graph --stats          hubs, orphans, broken links
 sb sync                   sync (every command already does this)
 sb -n <command>           skip the network this time (or SB_OFFLINE=1)
 ```
