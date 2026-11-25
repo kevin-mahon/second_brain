@@ -60,6 +60,7 @@ class SyncReport:
     network: str = "skipped"  # ok | offline | no-remote | skipped
     pushed: bool = False
     unpushed: bool = False
+    unreadable: list[str] = field(default_factory=list)  # ids encrypted with a different key
 
 
 class Syncer:
@@ -185,14 +186,22 @@ class Syncer:
 
     def apply_remote(self, report: SyncReport) -> None:
         encs = {p.stem: p for p in self.cfg.vault_dir.glob("*.enc")}
-        changed = 0
+        changed, attempted, first_error = 0, 0, None
         for note_id, enc in sorted(encs.items()):
             blob = enc.read_bytes()
             cipher = _sha(blob)
             entry = self.state.get(note_id)
             if entry and entry["cipher"] == cipher:
                 continue
-            name, text = self.cipher.decrypt(blob)
+            attempted += 1
+            try:
+                name, text = self.cipher.decrypt(blob)
+            except SBError as exc:
+                # One note written with another key mustn't block every command (or the phone).
+                # Nothing is deleted: the file stays in git for whoever has that key.
+                report.unreadable.append(note_id)
+                first_error = first_error or exc
+                continue
             name = Path(name).name
             if not name.endswith(".md") or name.startswith("."):
                 name = f"{note_id}.md"
@@ -209,6 +218,8 @@ class Syncer:
                 del self.state[note_id]
                 changed += 1
 
+        if first_error and attempted == len(encs) and len(report.unreadable) == attempted:
+            raise first_error  # nothing at all is readable: the key itself is wrong
         if changed:
             self._save_state()
             self.vault.refresh()

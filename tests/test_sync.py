@@ -150,3 +150,25 @@ def test_wrong_key_is_reported(machine, remote, key_file):
     create_key(machine("b"))
     with pytest.raises(SBError, match="doesn't match"):
         init_vault(machine("b"), remote=remote)
+
+
+def test_a_few_notes_under_another_key_are_skipped_not_fatal(machine, remote, tmp_path):
+    from dataclasses import replace
+
+    a = machine("a")
+    init_vault(a, remote=remote, help_notes=False)
+    Vault(a).create("Readable", body="fine\n")
+    sync(a)
+
+    # A machine joins, then ends up with a different key and adds a note.
+    init_vault(machine("b"), remote=remote, help_notes=False)
+    stray = replace(machine("b"), key_file=tmp_path / "other-key")
+    create_key(stray)
+    Vault(stray).create("Written with another key", body="?\n")
+    sync(stray)
+
+    report = sync(a)  # must not raise
+    assert len(report.unreadable) == 1
+    assert titles(a) == {"Readable"}
+    Vault(a).create("Still works", body="\n")
+    assert sync(a).pushed

@@ -68,6 +68,9 @@ def report_sync(report: SyncReport, verbose: bool = False) -> None:
         info(f"gave {name} an id and frontmatter")
     for title in report.conflicts:
         info(f"conflict: this note was also changed elsewhere. Your version is kept as '{title}'")
+    if report.unreadable:
+        info(f"skipped {len(report.unreadable)} note(s) encrypted with a different key: "
+             + ", ".join(report.unreadable) + ". Re-save them from the machine that wrote them.")
     if report.network == "offline":
         info("offline (couldn't reach the remote); working locally")
     elif report.unpushed:
