@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import subprocess
 import sys
 from collections import Counter
@@ -36,6 +37,26 @@ def fmt_note(note: Note) -> str:
     if note.tags:
         line += "  " + cyan(" ".join("#" + t for t in note.tags))
     return line
+
+
+def fmt_line(note: Note) -> str:
+    """One plain line per note, title first: for phones and scripts. The trailing id
+    makes the line itself a valid query, so a picked line can be passed straight back."""
+    tags = " ".join("#" + t for t in note.tags)
+    return " · ".join(part for part in (note.title, tags, note.id) if part)
+
+
+def newest_first(notes: list[Note]) -> list[Note]:
+    return sorted(notes, key=lambda n: n.id or "", reverse=True)
+
+
+def stdin_query(query: list[str]) -> list[str]:
+    """A query of `-` is read from stdin, so phones can send text without shell quoting."""
+    if query != ["-"]:
+        return query
+    text = sys.stdin.buffer.read().decode("utf-8", errors="replace")
+    line = next((ln.strip() for ln in text.splitlines() if ln.strip()), "")
+    return [line] if line else []
 
 
 def info(msg: str) -> None:
@@ -84,6 +105,10 @@ class App:
         from . import picker
 
         query = " ".join(query) if isinstance(query, list) else query
+        by_id = {n.id: n for n in self.vault.notes()}
+        for token in re.findall(r"\b\d{14}\b", query):
+            if token in by_id:  # e.g. a line from `--lines` output
+                return by_id[token]
         matches = self.vault.find(query) if query.strip() else list(self.vault.notes())
         if not matches:
             raise SBError(f"no note matches '{query}'" if query.strip() else "the vault has no notes yet")
@@ -199,9 +224,41 @@ def cmd_edit(app: App, args) -> None:
 
 
 def cmd_show(app: App, args) -> None:
-    note = app.pick(args.query, "show")
+    note = app.pick(stdin_query(args.query), "show")
     assert note.path
-    sys.stdout.write(note.path.read_text(encoding="utf-8"))
+    if args.md:
+        sys.stdout.write(reading_markdown(app.vault, note))
+    else:
+        sys.stdout.write(note.path.read_text(encoding="utf-8"))
+
+
+def reading_markdown(vault: Vault, note: Note) -> str:
+    """A note for reading on screens that don't know sb: no frontmatter, links in bold,
+    and the tags and connections listed at the end."""
+    from .note import LINK_RE, MD_LINK_RE
+
+    def wiki(m: re.Match) -> str:
+        inner = m.group(0)[2:-2]
+        shown = inner.split("|", 1)[1] if "|" in inner else inner.split("#", 1)[0]
+        return f"**{shown.strip()}**"
+
+    body = MD_LINK_RE.sub(lambda m: "**" + m.group(0)[1:].split("](", 1)[0] + "**", note.body)
+    body = LINK_RE.sub(wiki, body).strip("\n")
+    if not body.lstrip().startswith("#"):
+        body = f"# {note.title}\n\n{body}"
+    meta = []
+    if note.tags:
+        meta.append("Tags: " + " ".join("#" + t for t in note.tags))
+    targets = [vault.resolve_link(t) for t in note.links]
+    out = list(dict.fromkeys(n.title for n in targets if n))
+    if out:
+        meta.append("Links to: " + ", ".join(out))
+    back = [n.title for n in vault.backlinks(note)]
+    if back:
+        meta.append("Linked from: " + ", ".join(back))
+    if note.created:
+        meta.append(f"Created: {note.created}")
+    return body + ("\n\n---\n\n" + "\n\n".join(meta) if meta else "") + "\n"
 
 
 def cmd_path(app: App, args) -> None:
@@ -209,12 +266,24 @@ def cmd_path(app: App, args) -> None:
 
 
 def cmd_ls(app: App, args) -> None:
-    for note, _ in app.vault.search(None, tags=args.tag or []):
-        print(fmt_note(note))
+    notes = [n for n, _ in app.vault.search(None, tags=args.tag or [])]
+    for note in newest_first(notes) if args.lines else notes:
+        print(fmt_line(note) if args.lines else fmt_note(note))
 
 
 def cmd_search(app: App, args) -> None:
-    query = " ".join(args.query) if args.query else None
+    query = " ".join(stdin_query(args.query)).strip()
+    if args.lines:
+        # Dictated queries arrive as "Rust ownership." and "*" means everything.
+        query = query.strip(" .!?,").replace("*", "").strip()
+        notes = [n for n, _ in app.vault.search(query or None, tags=args.tag or [])]
+        if not notes and query:
+            notes = app.vault.find(query)  # every word somewhere, or fuzzy
+        for note in newest_first(notes):
+            print(fmt_line(note))
+        if not notes:
+            info("no matches")
+        return
     if not query and not args.tag:
         raise SBError("give a search term, a tag (-t), or both")
     results = app.vault.search(query, tags=args.tag or [])
@@ -232,7 +301,16 @@ def cmd_tags(app: App, args) -> None:
 
 
 def cmd_links(app: App, args) -> None:
-    note = app.pick(args.query, "links")
+    note = app.pick(stdin_query(args.query), "links")
+    if args.lines:
+        targets = [app.vault.resolve_link(t) for t in note.links]
+        out = list({n.id: n for n in targets if n}.values())
+        back = app.vault.backlinks(note) if args.backlinks else []
+        for other in out:
+            print("→ " + fmt_line(other))
+        for other in back:
+            print("← " + fmt_line(other))
+        return
     for target in note.links:
         linked = app.vault.resolve_link(target)
         print(f"→ {fmt_note(linked)}" if linked else red(f"→ [[{target}]] (no such note)"))
@@ -241,10 +319,10 @@ def cmd_links(app: App, args) -> None:
 
 
 def cmd_backlinks(app: App, args) -> None:
-    note = app.pick(args.query, "backlinks")
+    note = app.pick(stdin_query(args.query), "backlinks")
     backlinks = app.vault.backlinks(note)
     for other in backlinks:
-        print(f"← {fmt_note(other)}")
+        print("← " + fmt_line(other) if args.lines else f"← {fmt_note(other)}")
     if not backlinks:
         info("no backlinks")
 
@@ -473,6 +551,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--dry-run", action="store_true", help="print the note instead of saving it")
     p.set_defaults(presync=False)  # one sync after saving is enough: a new note can't conflict
 
+    lines_help = "one plain line per note, title first, newest first (for phones and scripts)"
+    commands = {}
     for name, func, help, aliases in (
         ("edit", cmd_edit, "open a note in your editor", ["e"]),
         ("show", cmd_show, "print a note", ["cat"]),
@@ -480,9 +560,16 @@ def build_parser() -> argparse.ArgumentParser:
         ("links", cmd_links, "list what a note links to", []),
         ("backlinks", cmd_backlinks, "list notes that link to a note", ["bl"]),
     ):
-        add(name, func, help, aliases).add_argument(
-            "query", nargs="*", help="id, title, part of a title, or a tag; leave empty to pick from all"
+        commands[name] = add(name, func, help, aliases)
+        commands[name].add_argument(
+            "query", nargs="*",
+            help="id, title, part of a title, or a tag; leave empty to pick from all; - reads it from stdin",
         )
+    commands["show"].add_argument("--md", action="store_true",
+                                  help="plain markdown for reading: no frontmatter, links in bold, connections at the end")
+    commands["links"].add_argument("--lines", action="store_true", help=lines_help)
+    commands["links"].add_argument("-b", "--backlinks", action="store_true", help="with --lines: also notes linking here")
+    commands["backlinks"].add_argument("--lines", action="store_true", help=lines_help)
 
     p = add("rm", cmd_rm, "delete a note")
     p.add_argument("query", nargs="*")
@@ -490,10 +577,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = add("ls", cmd_ls, "list notes", ["l"])
     p.add_argument("-t", "--tag", action="append", help="only notes with this tag (repeatable)")
+    p.add_argument("--lines", action="store_true", help=lines_help)
 
     p = add("search", cmd_search, "search titles, tags and text", ["s"])
-    p.add_argument("query", nargs="*")
+    p.add_argument("query", nargs="*", help="- reads it from stdin")
     p.add_argument("-t", "--tag", action="append", help="only notes with this tag (repeatable)")
+    p.add_argument("--lines", action="store_true", help=lines_help + "; * or nothing lists all")
 
     p = add("graph", cmd_graph, "draw the knowledge graph in the terminal", ["g"])
     p.add_argument("query", nargs="*", help="center on this note and show its neighbourhood")
@@ -527,8 +616,41 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+# What a phone key restricted with `command="sb _ssh_gate"` may run: add and read, never delete.
+GATE_COMMANDS = {"capture", "c", "search", "s", "show", "cat", "links", "backlinks", "bl", "ls", "l", "tags"}
+
+
+def ssh_gate_argv(original: str) -> list[str]:
+    """The sb arguments in an SSH command, if they're allowed. Nothing goes through a shell,
+    so `;`, `$()` and friends are just text. Leading words (`export LANG=...;`) are ignored."""
+    import shlex
+
+    try:
+        words = shlex.split(original)
+    except ValueError:
+        raise SBError("can't parse the command") from None
+    start = next((i for i, w in enumerate(words) if os.path.basename(w) == "sb"), None)
+    if start is None:
+        raise SBError("only sb commands are allowed with this key")
+    rest = words[start + 1:]
+    sub = next((w for w in rest if not w.startswith("-")), None)
+    if sub not in GATE_COMMANDS or any(w in ("-h", "--help") for w in rest[: rest.index(sub)]):
+        raise SBError("this key may only run: capture, search, show, links, backlinks, ls, tags")
+    return rest
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
+    for stream in (sys.stdout, sys.stderr):
+        # Over ssh from a phone there's often no locale; never die on an emoji.
+        if (getattr(stream, "encoding", "") or "").lower() in ("ascii", "ansi_x3.4-1968"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
+    if argv[:1] == ["_ssh_gate"]:
+        try:
+            argv = ssh_gate_argv(os.environ.get("SSH_ORIGINAL_COMMAND", ""))
+        except SBError as exc:
+            info(str(exc))
+            return 1
     if argv[:1] == ["_shell_complete"]:
         # Bypass argparse: the words being completed may look like options.
         try:

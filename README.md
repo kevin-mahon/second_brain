@@ -63,6 +63,7 @@ Without cloning: `uv tool install git+https://github.com/kevin-mahon/second_brai
 sb new <title> [-t tag]   create a note and open it in $SB_EDITOR / $EDITOR / nvim
 sb edit [query]           edit a note; several matches (or none given) open a picker
 sb show <query>           print a note
+sb show --md <query>      print it as plain markdown (no frontmatter, links bold)
 sb ls [-t tag]            list notes
 sb search <text> [-t tag] search titles, tags and text
 sb tags                   tags with counts
@@ -170,22 +171,78 @@ SSH; the server enriches, encrypts and pushes the note.
 
 "Hey Siri, capture to sb" then works hands-free.
 
-**Optional "Search sb" Shortcut:** **Ask for Input** (Text) → **Run Script Over
-SSH** with script `read -r q; ~/.local/bin/sb search "$q"` and Input *Provided
-Input* → **Quick Look** on *Shell Script Result*.
+**Shortcut "Read sb"** (search, pick a note, read it, follow its links):
+
+Every SSH step below uses the same host, port, user and SSH key as "Capture
+to sb", and passes its text as **Input** (stdin), so you never quote
+anything. sb prints phone-friendly output for these flags: one note per
+line (`Title · #tags · id`, newest first), and with `show --md` the note as
+plain markdown, with links in **bold** and its tags, links and backlinks
+listed at the end.
+
+1. Tap **ⓘ** (Details): leave Share Sheet off. Add **Receive** *Text* input
+   from *Nowhere*, and if there's no input: **Continue**. (The shortcut calls
+   itself in step 6 to follow a link, and that's how the input arrives.)
+2. Add **If** *Shortcut Input* **has any value**:
+   - **Set variable** `Note` to *Shortcut Input*
+   - **Otherwise:**
+     - **Ask for Input**: Text, prompt `Search notes (* for all)`. You can
+       tap the keyboard's mic to dictate.
+     - **Run Script Over SSH**: script `~/.local/bin/sb search --lines -`,
+       Input *Provided Input*
+     - **If** *Shell Script Result* **does not have any value**: **Show
+       Alert** `No matching notes`, then **Stop This Shortcut**. **End If**
+     - **Split Text** *Shell Script Result* by *New Lines*
+     - **Choose from List** *Split Text*, prompt `Open which note?`. You can
+       type in the list to narrow it.
+     - **Set variable** `Note` to *Chosen Item*
+   - **End If**
+3. Add **Run Script Over SSH**: script `~/.local/bin/sb show --md -`, Input
+   `Note`.
+4. Add **Make Rich Text from Markdown** with *Shell Script Result*, then
+   **Quick Look** on *Rich Text from Markdown*. You read the note there, and
+   the share button copies it. Swipe it closed when you're done.
+5. Add **Run Script Over SSH**: script `~/.local/bin/sb links --lines -b -`,
+   Input `Note`. It lists the notes this one links to (`→`) and the notes
+   linking here (`←`).
+6. Add **If** *Shell Script Result* **has any value**:
+   - **Split Text** by *New Lines* → **Choose from List**, prompt `Follow a
+     link?`. Tapping **Cancel** ends the shortcut.
+   - **Run Shortcut** *Read sb*, Input *Chosen Item*. This opens the linked
+     note and offers its links in turn, so you can walk the graph from your
+     phone.
+   - **End If**
+
+"Hey Siri, read sb" starts it. To read your capture inbox, search for
+`inbox`: tags match too.
+
+What each step sends, if you want to try them from a terminal first:
+
+```sh
+echo "spaced rep" | ssh sbvault '~/.local/bin/sb search --lines -'
+echo "Spaced repetition · #learning · 20261124144522" | ssh sbvault '~/.local/bin/sb show --md -'
+```
+
+A dictated query like "Spaced repetition." still matches: trailing
+punctuation is ignored, and if no title or line contains the exact phrase,
+sb falls back to notes that contain every word, then to fuzzy matching.
 
 **Hardening (recommended, since SSH is exposed to the internet):**
 - Use key-only logins on the server: set `PasswordAuthentication no` in
   `/etc/ssh/sshd_config`.
-- Restrict the phone's key to capturing only, so a lost phone can only add
-  notes. Prefix its line in `authorized_keys` like this (the Shortcut's
-  script is then ignored, and the dictation still arrives on stdin):
+- Shortcuts uses one SSH key for all your shortcuts, so restrict it to sb's
+  gate. Prefix the phone key's line in `~/.ssh/authorized_keys` like this:
 
   ```
-  command="LANG=en_US.UTF-8 ~/.local/bin/sb capture --source phone",no-pty,no-port-forwarding,no-agent-forwarding ssh-ed25519 AAAA... shortcuts
+  command="~/.local/bin/sb _ssh_gate",no-pty,no-port-forwarding,no-agent-forwarding ssh-ed25519 AAAA... shortcuts
   ```
 
-  The search Shortcut would then need its own, unrestricted key.
+  The gate runs `sb` directly, with no shell in between. It only allows
+  `capture`, `search`, `show`, `links`, `backlinks`, `ls` and `tags`, so a
+  lost phone can add and read notes but never delete or edit them. Every
+  script above works unchanged behind it. To check it, run a throwaway
+  Shortcut with the script `~/.local/bin/sb rm x`: it should fail with
+  `this key may only run: ...`.
 
 ### Finding the note you mean
 

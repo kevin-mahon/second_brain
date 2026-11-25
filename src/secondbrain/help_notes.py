@@ -228,7 +228,17 @@ no network and no models:
 capture as a proper note, and drop the tag. See [[Zettelkasten in a nutshell]].
 
 From an iPhone, an iOS Shortcut sends dictation over SSH to the machine
-that holds your vault. The README has step-by-step instructions.
+that holds your vault. A second Shortcut searches and reads notes there,
+using output made for phones:
+
+```
+sb search --lines -     # query on stdin; one line per note, newest first
+sb show --md -          # a picked line on stdin; readable markdown
+sb links --lines -b -   # where to go next: links and backlinks
+```
+
+Restrict the phone's SSH key with `command="sb _ssh_gate"` so it can only
+capture and read. The README has step-by-step instructions for all of this.
 """,
     ),
     (
