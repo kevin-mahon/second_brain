@@ -40,8 +40,20 @@ def test_search_lines_from_stdin_then_read_the_picked_line(env):
     code, out = env(["show", "--md", "-"], line)
     assert code == 0
     assert out.startswith("# Spaced repetition\n\nReview often. See **the curve**.")
-    assert "---" in out and "Tags: #learning" in out and "Links to: Forgetting curve" in out
+    assert "#learning · Created " in out and "**Links to**\n\n- → Forgetting curve\n" in out
     assert "id:" not in out  # no frontmatter
+
+
+def test_link_lines_in_the_reading_view_open_the_linked_note(env):
+    import re
+
+    _, out = env(["show", "--md", "forgetting"])
+    [line] = re.findall(r"[→←] .+", out)  # what the Shortcut's Match Text step extracts
+    assert line == "← Spaced repetition"
+    _, out = env(["show", "--md", "-"], line)
+    assert out.startswith("# Spaced repetition")
+    _, out = env(["links", "--lines", "-"], "# Spaced repetition\n\nReview often.")  # a pasted note works too
+    assert out.startswith("→ Forgetting curve")
 
 
 def test_search_lines_star_lists_everything_newest_first_and_falls_back_to_fuzzy(env):
@@ -56,8 +68,6 @@ def test_links_lines_with_backlinks_are_pickable(env):
     assert out.startswith("← Spaced repetition · #learning · ")
     _, out = env(["show", "--md", "-"], out.splitlines()[0])
     assert out.startswith("# Spaced repetition")
-    _, out = env(["show", "--md", "forgetting"])
-    assert "Linked from: Spaced repetition" in out
 
 
 def test_ssh_gate_allows_reading_and_capturing_only():

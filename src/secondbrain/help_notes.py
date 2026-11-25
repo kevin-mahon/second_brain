@@ -234,7 +234,7 @@ using output made for phones:
 ```
 sb search --lines -     # query on stdin; one line per note, newest first
 sb show --md -          # a picked line on stdin; readable markdown
-sb links --lines -b -   # where to go next: links and backlinks
+sb links --lines -b -   # just the links and backlinks, one per line
 ```
 
 Restrict the phone's SSH key with `command="sb _ssh_gate"` so it can only

@@ -177,8 +177,8 @@ Every SSH step below uses the same host, port, user and SSH key as "Capture
 to sb", and passes its text as **Input** (stdin), so you never quote
 anything. sb prints phone-friendly output for these flags: one note per
 line (`Title · #tags · id`, newest first), and with `show --md` the note as
-plain markdown, with links in **bold** and its tags, links and backlinks
-listed at the end.
+plain markdown, with links in **bold**, and its tags and links listed at
+the end.
 
 1. Tap **ⓘ** (Details): leave Share Sheet off. Add **Receive** *Text* input
    from *Nowhere*, and if there's no input: **Continue**. (The shortcut calls
@@ -202,12 +202,13 @@ listed at the end.
 4. Add **Make Rich Text from Markdown** with *Shell Script Result*, then
    **Quick Look** on *Rich Text from Markdown*. You read the note there, and
    the share button copies it. Swipe it closed when you're done.
-5. Add **Run Script Over SSH**: script `~/.local/bin/sb links --lines -b -`,
-   Input `Note`. It lists the notes this one links to (`→`) and the notes
-   linking here (`←`).
-6. Add **If** *Shell Script Result* **has any value**:
-   - **Split Text** by *New Lines* → **Choose from List**, prompt `Follow a
-     link?`. Tapping **Cancel** ends the shortcut.
+5. Add **Match Text**: pattern `[→←] .+` in *Shell Script Result* (the
+   step 3 result, not the rich text). The reading view ends with the note's
+   links as lines like `→ Linking notes` (links to) and `← Welcome to sb`
+   (linked from), and this picks them out. No second SSH call is needed.
+6. Add **If** *Matches* **has any value**:
+   - **Choose from List** *Matches*, prompt `Follow a link?`. Tapping
+     **Cancel** ends the shortcut.
    - **Run Shortcut** *Read sb*, Input *Chosen Item*. This opens the linked
      note and offers its links in turn, so you can walk the graph from your
      phone.

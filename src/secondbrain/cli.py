@@ -56,6 +56,7 @@ def stdin_query(query: list[str]) -> list[str]:
         return query
     text = sys.stdin.buffer.read().decode("utf-8", errors="replace")
     line = next((ln.strip() for ln in text.splitlines() if ln.strip()), "")
+    line = line.lstrip("#→←-*• ").strip()  # a "# Title" heading or a "→ Title" link line
     return [line] if line else []
 
 
@@ -249,19 +250,24 @@ def reading_markdown(vault: Vault, note: Note) -> str:
     body = LINK_RE.sub(wiki, body).strip("\n")
     if not body.lstrip().startswith("#"):
         body = f"# {note.title}\n\n{body}"
-    meta = []
-    if note.tags:
-        meta.append("Tags: " + " ".join("#" + t for t in note.tags))
+    titles = Counter(n.title.casefold() for n in vault.notes())
+
+    def link_line(arrow: str, other: Note) -> str:
+        # The line is also a query: the title finds the note, plus the id if the title is shared.
+        dup = f" · {other.id}" if titles[other.title.casefold()] > 1 else ""
+        return f"- {arrow} {other.title}{dup}"
+
+    info_line = " · ".join(filter(None, [
+        " ".join("#" + t for t in note.tags), f"Created {note.created}" if note.created else ""]))
+    sections = [info_line] if info_line else []
     targets = [vault.resolve_link(t) for t in note.links]
-    out = list(dict.fromkeys(n.title for n in targets if n))
+    out = list({n.id: n for n in targets if n and n is not note}.values())
     if out:
-        meta.append("Links to: " + ", ".join(out))
-    back = [n.title for n in vault.backlinks(note)]
+        sections.append("**Links to**\n\n" + "\n".join(link_line("→", n) for n in out))
+    back = vault.backlinks(note)
     if back:
-        meta.append("Linked from: " + ", ".join(back))
-    if note.created:
-        meta.append(f"Created: {note.created}")
-    return body + ("\n\n---\n\n" + "\n\n".join(meta) if meta else "") + "\n"
+        sections.append("**Linked from**\n\n" + "\n".join(link_line("←", n) for n in back))
+    return body + ("\n\n---\n\n" + "\n\n".join(sections) if sections else "") + "\n"
 
 
 def cmd_path(app: App, args) -> None:
