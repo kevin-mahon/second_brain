@@ -34,12 +34,17 @@ die()  { printf '\033[31mxx  %s\033[0m\n' "$*" >&2; exit 1; }
 
 say "Checking prerequisites"
 command -v git >/dev/null || die "git is required (e.g. sudo apt install git)"
-command -v python3 >/dev/null || die "python3 (>= 3.10) is required"
-python3 -c 'import sys; sys.exit(sys.version_info < (3, 10))' \
-    || die "python >= 3.10 is required (found $(python3 --version))"
-
-if ! command -v uv >/dev/null && ! command -v pipx >/dev/null; then
-    warn "Neither uv nor pipx is installed; one is needed to install sb as a global command."
+PY_OK=0
+if command -v python3 >/dev/null && python3 -c 'import sys; sys.exit(sys.version_info < (3, 10))'; then
+    PY_OK=1
+fi
+# uv can download its own Python, so an old system Python (macOS ships 3.9) is fine with uv.
+if ! command -v uv >/dev/null && { ! command -v pipx >/dev/null || [[ $PY_OK -eq 0 ]]; }; then
+    if [[ $PY_OK -eq 0 ]]; then
+        warn "No Python >= 3.10 found ($(python3 --version 2>&1 || echo none)); uv can provide one."
+    else
+        warn "Neither uv nor pipx is installed; one is needed to install sb as a global command."
+    fi
     read -r -p "Install uv now from https://astral.sh/uv? [Y/n] " answer
     [[ "${answer:-y}" =~ ^[Yy] ]] || die "install uv or pipx, then re-run ./setup.sh"
     curl -LsSf https://astral.sh/uv/install.sh | sh
@@ -54,7 +59,9 @@ fi
 
 say "Installing sb (editable: changes in $REPO_DIR take effect immediately)"
 if command -v uv >/dev/null; then
-    uv tool install --quiet --force --editable "$REPO_DIR"
+    UV_ARGS=()
+    [[ $PY_OK -eq 1 ]] || UV_ARGS=(--python 3.12)
+    uv tool install --quiet --force --editable ${UV_ARGS[@]+"${UV_ARGS[@]}"} "$REPO_DIR"  # bash 3.2-safe
     BIN_DIR="$(uv tool dir --bin)"
 else
     pipx install --force --editable "$REPO_DIR" >/dev/null

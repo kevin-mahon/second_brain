@@ -31,8 +31,7 @@ yours is kept as a separate `... (conflict from <host>)` note.
 - [X] Sync (encrypted git)
 - [X] Graph view (force-directed, braille + color in the terminal)
 - [X] Neovim integration (`gf` on links, backlinks, `[[` completion), no nvim config needed
-- [ ] Drawing support
-- [ ] Export / Import
+- [ ] iOS App
 
 ## Installation
 
@@ -89,6 +88,104 @@ installed on:
 
 If you open notes with plain `nvim`, `sb nvim-setup` prints an optional
 init.lua snippet.
+
+### Capture (no editor)
+
+```
+sb capture "some thought"            # or pipe text on stdin
+sb capture --dry-run "..."           # preview
+```
+
+Captured text is linked to your vault automatically, on the local machine:
+mentions of note titles become `[[links]]`, tags are suggested from similar
+notes, plus `Related:` and `Mentions:` lines and a title taken from the first
+sentence. Captures are tagged `#inbox` (change with `SB_CAPTURE_TAG`). Use
+`--plain` to skip all of this.
+
+## One vault server, every machine
+
+The vault lives on one always-on home machine (the "server"). It holds a bare
+git repo of the encrypted vault and also takes captures from your phone.
+
+**1. On the server, once:**
+
+```sh
+git init --bare -b main ~/sb-vault.git
+git clone https://github.com/kevin-mahon/second_brain ~/second_brain
+cd ~/second_brain && ./setup.sh --remote ~/sb-vault.git   # the server's own vault
+```
+
+The first machine to run `setup.sh` creates the key (`~/.second_brain_key`). If
+you already have one, copy it to the server *before* running setup.
+
+**2. On every other machine:** add an SSH alias, so that if the server's address
+changes you only edit one line per machine:
+
+```
+# ~/.ssh/config
+Host sbvault
+    HostName <server-ip-or-dns-name>
+    User <your-user>
+```
+
+Then copy the key over and run setup:
+
+```sh
+scp sbvault:.second_brain_key ~/ && chmod 600 ~/.second_brain_key
+./setup.sh --remote sbvault:sb-vault.git
+```
+
+To repoint an existing vault later: `sb init --remote sbvault:sb-vault.git`.
+
+The server only ever stores encrypted notes in git. The plaintext `notes/`
+folder exists only on machines you edit on, including the server itself if it
+takes captures.
+
+## iPhone: dictate a note (iOS Shortcut)
+
+Your phone needs no app and no key. It runs `sb capture` on the server over
+SSH; the server enriches, encrypts and pushes the note.
+
+**Shortcut "Capture to sb"** (Shortcuts app → **+**):
+
+1. Tap **ⓘ** (Details) → turn on **Show in Share Sheet**, so you can share
+   text from any app.
+2. Add **Receive** *Text* input from *Share Sheet*. If there's no input:
+   **Continue**.
+3. Add **If** *Shortcut Input* **has any value**:
+   - **Set variable** `Note` to *Shortcut Input*
+   - **Otherwise:** **Dictate Text** (Stop Listening: *After Pause*), then
+     **Set variable** `Note` to *Dictated Text*
+   - **End If**
+4. Add **Run Script Over SSH**:
+   - Script: `export LANG=en_US.UTF-8; ~/.local/bin/sb capture --source phone`
+   - Host: your server's address, Port `22`, User: your login
+   - Authentication: **SSH Key**. Shortcuts generates an ed25519 key; tap it
+     → **Share Public Key**, and append that line to the server's
+     `~/.ssh/authorized_keys`.
+   - Input: the `Note` variable. It reaches `sb` on stdin, so quotes and
+     emoji in your dictation can't break the command.
+5. Add **Show Notification** with *Shell Script Result*. It shows something
+   like `Saved "…" #inbox #learning`, plus what got linked.
+
+"Hey Siri, capture to sb" then works hands-free.
+
+**Optional "Search sb" Shortcut:** **Ask for Input** (Text) → **Run Script Over
+SSH** with script `read -r q; ~/.local/bin/sb search "$q"` and Input *Provided
+Input* → **Quick Look** on *Shell Script Result*.
+
+**Hardening (recommended, since SSH is exposed to the internet):**
+- Use key-only logins on the server: set `PasswordAuthentication no` in
+  `/etc/ssh/sshd_config`.
+- Restrict the phone's key to capturing only, so a lost phone can only add
+  notes. Prefix its line in `authorized_keys` like this (the Shortcut's
+  script is then ignored, and the dictation still arrives on stdin):
+
+  ```
+  command="LANG=en_US.UTF-8 ~/.local/bin/sb capture --source phone",no-pty,no-port-forwarding,no-agent-forwarding ssh-ed25519 AAAA... shortcuts
+  ```
+
+  The search Shortcut would then need its own, unrestricted key.
 
 ### Finding the note you mean
 

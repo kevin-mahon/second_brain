@@ -154,7 +154,9 @@ class Vault:
 
     # -- writing ------------------------------------------------------------
 
-    def create(self, title: str, tags: Iterable[str] = (), body: str | None = None) -> Note:
+    def create(
+        self, title: str, tags: Iterable[str] = (), body: str | None = None, extra: dict | None = None
+    ) -> Note:
         self.cfg.notes_dir.mkdir(parents=True, exist_ok=True)
         note = Note(
             id=new_id(self.ids()),
@@ -162,6 +164,7 @@ class Vault:
             tags=list(tags),
             created=now_created(),
             body=body if body is not None else f"\n# {title}\n\n",
+            extra=dict(extra or {}),
         )
         note.path = self.cfg.notes_dir / note.filename
         note.path.write_text(note.render(), encoding="utf-8")

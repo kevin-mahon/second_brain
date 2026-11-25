@@ -22,6 +22,7 @@ Start here, then follow the links:
 - [[Finding notes]]: listing, tags, and search
 - [[The graph view]]: see the whole network in your terminal
 - [[Using sb in Neovim]]: follow links with `gf`, backlinks, completion
+- [[Capturing from your phone]]: dictate a note and sb links it in
 - [[Sync and encryption]]: how your notes get to your other machines
 - [[Setting up another machine]]
 
@@ -195,6 +196,39 @@ work; see [[Linking notes]].
 
 Opening notes with plain `nvim` instead? Run `sb nvim-setup` and paste
 the snippet it prints into your init.lua. It's optional.
+""",
+    ),
+    (
+        "Capturing from your phone",
+        ["sb", "help", "capture"],
+        """
+# Capturing from your phone
+
+`sb capture` saves text as a note with no editor involved:
+
+```
+sb capture "Sarah Chen says interleaving beats blocked practice"
+echo "dictated text" | sb capture --source phone
+sb capture --dry-run "..."     # see what it would write
+```
+
+Before saving, sb connects the note to your vault. This runs locally, with
+no network and no models:
+
+- mentions of existing note titles become links: "...spaced repetition..."
+  becomes `[[spaced repetition]]`
+- tags are suggested from the most similar notes, and `#inbox` is always added
+- a `Related:` line lists close notes the text didn't mention
+- a `Mentions:` line links new names (like `[[Sarah Chen]]`); press `gf` on
+  one later to create a note for that person
+- the title is the first sentence, with dictation filler ("okay so note to
+  self...") removed
+
+`#inbox` marks raw captures. Now and then run `sb ls -t inbox`, rewrite each
+capture as a proper note, and drop the tag. See [[Zettelkasten in a nutshell]].
+
+From an iPhone, an iOS Shortcut sends dictation over SSH to the machine
+that holds your vault. The README has step-by-step instructions.
 """,
     ),
     (

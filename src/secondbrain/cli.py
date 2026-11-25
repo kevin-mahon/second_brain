@@ -143,6 +143,54 @@ def cmd_new(app: App, args) -> None:
     app.sync()
 
 
+def read_capture_text(args) -> str:
+    if args.text:
+        return " ".join(args.text)
+    if sys.stdin.isatty():
+        info("type the note, then Ctrl-D")
+    return sys.stdin.buffer.read().decode("utf-8", errors="replace")
+
+
+def cmd_capture(app: App, args) -> None:
+    """Save text without an editor: for phones, scripts and quick thoughts."""
+    from .enrich import enrich, make_title, strip_filler
+
+    text = strip_filler(read_capture_text(args))
+    if not text:
+        raise SBError("nothing to capture")
+    inbox = os.environ.get("SB_CAPTURE_TAG", "inbox")
+    base_tags = ([inbox] if inbox else []) + (args.tag or [])
+
+    result = enrich(app.vault, text, exclude_tags=set(base_tags)) if not args.plain else None
+    body_text = result.text if result else text
+    tags = list(dict.fromkeys(base_tags + (result.tags if result else [])))
+    title = args.title or make_title(text)
+
+    body = f"\n# {title}\n\n{body_text}\n"
+    if result and result.related:
+        body += "\nRelated: " + " · ".join(f"[[{n.title}]]" for n in result.related) + "\n"
+    if result and result.mentions:
+        body += "\nMentions: " + " · ".join(f"[[{m}]]" for m in result.mentions) + "\n"
+    extra = {"source": args.source} if args.source else {}
+
+    if args.dry_run:
+        print(Note(id="(new)", title=title, tags=tags, created="(now)", body=body, extra=extra).render(), end="")
+        return
+    app.vault.create(title, tags=tags, body=body, extra=extra)
+    app.sync()
+
+    summary = f"Saved “{title}”"
+    if tags:
+        summary += "  " + " ".join("#" + t for t in tags)
+    if result and result.linked:
+        summary += "\nlinked: " + ", ".join(n.title for n in result.linked)
+    if result and result.related:
+        summary += "\nrelated: " + ", ".join(n.title for n in result.related)
+    if result and result.mentions:
+        summary += "\nnew names: " + ", ".join(result.mentions)
+    print(summary)
+
+
 def cmd_edit(app: App, args) -> None:
     note = app.pick(args.query, "edit")
     assert note.path
@@ -416,6 +464,15 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("title", nargs="+")
     p.add_argument("-t", "--tag", action="append", help="tag (repeatable)")
 
+    p = add("capture", cmd_capture, "save text as a note without an editor (reads stdin if no text)", ["c"])
+    p.add_argument("text", nargs="*", help="the note; omit to read stdin")
+    p.add_argument("-t", "--tag", action="append", help="extra tag (repeatable)")
+    p.add_argument("--title", help="title (default: the first sentence)")
+    p.add_argument("--source", help="recorded in frontmatter, e.g. phone")
+    p.add_argument("--plain", action="store_true", help="no automatic links, tags or related notes")
+    p.add_argument("--dry-run", action="store_true", help="print the note instead of saving it")
+    p.set_defaults(presync=False)  # one sync after saving is enough: a new note can't conflict
+
     for name, func, help, aliases in (
         ("edit", cmd_edit, "open a note in your editor", ["e"]),
         ("show", cmd_show, "print a note", ["cat"]),
@@ -496,7 +553,8 @@ def main(argv: list[str] | None = None) -> int:
             cmd_init(cfg, args)
             return 0
         app = App(cfg, sync=getattr(args, "sync", True))
-        app.sync(verbose=args.func is cmd_sync)
+        if getattr(args, "presync", True):
+            app.sync(verbose=args.func is cmd_sync)
         args.func(app, args)
         return 0
     except SBError as exc:
